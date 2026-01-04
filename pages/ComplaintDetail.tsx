@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Complaint, User, UserRole, IssueStatus } from '../types';
 import { updateComplaintStatus } from '../services/mockStore';
 import { DEPARTMENTS } from '../constants';
@@ -14,24 +14,25 @@ interface ComplaintDetailProps {
 const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBack, onRefresh }) => {
   const [updating, setUpdating] = useState(false);
   const [resolutionImg, setResolutionImg] = useState<string | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const getDeptInfo = (cat: string) => {
     return (DEPARTMENTS[cat as keyof typeof DEPARTMENTS] as any) || DEPARTMENTS.Other;
   };
 
   const handleUpdateStatus = (newStatus: IssueStatus) => {
-    // Evidence is ONLY required for RESOLVED state
     if (newStatus === IssueStatus.RESOLVED && !resolutionImg && !complaint.resolutionImage) {
       alert('Official verification requires photographic repair proof for case closure.');
       return;
     }
     
-    // Prevent redundant updates
     if (newStatus === complaint.status) return;
 
     setUpdating(true);
     setTimeout(() => {
-      // Pass the current resolutionImg if it exists, otherwise keep old or undefined
       updateComplaintStatus(complaint.id, newStatus, resolutionImg || undefined);
       setUpdating(false);
       onRefresh();
@@ -46,6 +47,42 @@ const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBa
       reader.onloadend = () => setResolutionImg(reader.result as string);
       reader.readAsDataURL(file);
     }
+  };
+
+  const startCamera = async () => {
+    try {
+      setIsCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access denied", err);
+      alert("Dispatch Alert: Device camera access prohibited.");
+      setIsCameraActive(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      if (context) {
+        canvasRef.current.width = videoRef.current.videoWidth;
+        canvasRef.current.height = videoRef.current.videoHeight;
+        context.drawImage(videoRef.current, 0, 0);
+        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
+        setResolutionImg(dataUrl);
+        stopCamera();
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
+    setIsCameraActive(false);
   };
 
   const downloadPDF = () => {
@@ -76,7 +113,6 @@ const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBa
       <div className="grid lg:grid-cols-3 gap-12">
         <div className="lg:col-span-2 space-y-12">
           
-          {/* HELPLINE - TOP POSITION */}
           <div className="p-12 bg-[#2563EB] rounded-[4rem] border border-blue-400 shadow-2xl shadow-blue-100 text-white relative overflow-hidden group">
             <div className="absolute -right-16 -top-16 w-64 h-64 bg-white/10 rounded-full group-hover:scale-125 transition-transform duration-1000"></div>
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between">
@@ -98,7 +134,6 @@ const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBa
             </div>
           </div>
 
-          {/* Dossier Hub */}
           <div className="bg-white rounded-[4rem] shadow-2xl p-12 md:p-20 border border-slate-50 relative overflow-hidden">
             <div className="absolute top-12 right-12">
               <span className={`px-10 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.3em] shadow-lg border-2 ${
@@ -157,7 +192,6 @@ const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBa
             </div>
           </div>
 
-          {/* INTERACTIVE MAP */}
           <div className="bg-slate-900 rounded-[4rem] shadow-2xl h-[500px] relative overflow-hidden border-[12px] border-white">
             <iframe
               width="100%"
@@ -185,7 +219,6 @@ const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBa
           </div>
         </div>
 
-        {/* Action Column Sidebar */}
         <div className="space-y-12">
           
           <div className="bg-white rounded-[4rem] shadow-2xl p-12 border border-slate-50">
@@ -259,27 +292,64 @@ const ComplaintDetail: React.FC<ComplaintDetailProps> = ({ complaint, user, onBa
                 {complaint.status === IssueStatus.IN_PROGRESS && (
                   <div className="space-y-10 animate-in slide-in-from-top-4 duration-500">
                     <div 
-                      className={`relative border-8 border-dashed rounded-[3rem] p-12 transition-all flex flex-col items-center justify-center cursor-pointer duration-500 ${resolutionImg ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 hover:border-emerald-400 bg-slate-50/50'}`}
-                      onClick={() => document.getElementById('resol-upload-trigger')?.click()}
+                      className={`relative border-8 border-dashed rounded-[3rem] p-12 transition-all flex flex-col items-center justify-center min-h-[300px] ${resolutionImg && !isCameraActive ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/50 hover:border-blue-400'}`}
                     >
-                      <input id="resol-upload-trigger" type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                      {resolutionImg ? (
-                        <div className="text-center">
-                          <div className="w-20 h-20 bg-emerald-500 text-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-emerald-200">
-                             <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={5} d="M5 13l4 4L19 7" /></svg>
+                      {isCameraActive ? (
+                        <div className="w-full h-full p-2 relative flex flex-col items-center">
+                          <video ref={videoRef} autoPlay playsInline className="w-full h-48 object-cover rounded-2xl shadow-xl border-2 border-white" />
+                          <canvas ref={canvasRef} className="hidden" />
+                          <div className="flex space-x-4 mt-6">
+                            <button 
+                              onClick={capturePhoto}
+                              className="bg-emerald-600 text-white p-4 rounded-full shadow-xl hover:bg-emerald-700 active:scale-90 transition-all"
+                            >
+                               <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                            <button 
+                              onClick={stopCamera}
+                              className="bg-slate-800 text-white px-6 py-3 rounded-full font-black uppercase text-[10px] tracking-widest"
+                            >
+                              Exit
+                            </button>
                           </div>
+                        </div>
+                      ) : resolutionImg ? (
+                        <div className="text-center">
+                          <img src={resolutionImg} className="w-32 h-32 object-cover rounded-2xl mx-auto mb-4 border-4 border-white shadow-xl" />
                           <p className="text-emerald-600 font-black text-[10px] uppercase tracking-[0.4em]">Proof Index OK</p>
+                          <button onClick={() => setResolutionImg(null)} className="text-[10px] text-red-500 font-bold uppercase mt-2">Clear</button>
                         </div>
                       ) : (
-                        <div className="text-center">
-                          <svg className="w-16 h-16 text-slate-300 mx-auto mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                          <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em]">Attach Repair Proof (MANDATORY)</p>
+                        <div className="text-center w-full">
+                          <div className="flex justify-center space-x-8">
+                             <button 
+                              onClick={() => document.getElementById('resol-upload-trigger')?.click()}
+                              className="flex flex-col items-center space-y-2 group"
+                            >
+                              <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-slate-400 shadow-sm border border-slate-100 group-hover:text-blue-600 transition-all">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                              </div>
+                              <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Upload</span>
+                            </button>
+                            <button 
+                              onClick={startCamera}
+                              className="flex flex-col items-center space-y-2 group"
+                            >
+                              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                              </div>
+                              <span className="text-[8px] font-black uppercase tracking-widest text-blue-600">Camera</span>
+                            </button>
+                          </div>
+                          <input id="resol-upload-trigger" type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                         </div>
                       )}
                     </div>
                     
                     <button 
-                      disabled={updating || !resolutionImg} 
+                      disabled={updating || !resolutionImg || isCameraActive} 
                       onClick={() => handleUpdateStatus(IssueStatus.RESOLVED)}
                       className={`w-full py-7 rounded-full font-black uppercase text-xs tracking-[0.3em] shadow-[0_25px_50px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center ${resolutionImg ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200 active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
                     >
