@@ -1,0 +1,8 @@
+{
+  "name": "CvicEase by-Syntax-tic.4",
+  "description": "An AI-powered civic issue reporting platform that bridges the gap between citizens and authorities through automated categorization and transparent tracking.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
